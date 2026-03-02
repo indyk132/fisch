@@ -1262,27 +1262,24 @@ local GameCallbacks = {}
 
 -- Fishing category
 local Fishing = Library:AddCategory("Fishing", "anchor")
-Fishing:AddToggle("Auto Cast", false, function(v)
-if GameCallbacks.autoCast then GameCallbacks.autoCast(v) end
+Fishing:AddToggle("Auto Fish", false, function(v)
+if GameCallbacks.autoFish then GameCallbacks.autoFish(v) end
 end)
-Fishing:AddToggle("Auto Shake", false, function(v)
-if GameCallbacks.autoShake then GameCallbacks.autoShake(v) end
-end)
-Fishing:AddToggle("Auto Reel", false, function(v)
-if GameCallbacks.autoReel then GameCallbacks.autoReel(v) end
-end)
-Fishing:AddToggle("Freeze Character", false, function(v)
-if GameCallbacks.freeze then GameCallbacks.freeze(v) end
-end)
-Fishing:AddSeparator()
-Fishing:AddDropdown("Cast Mode", {"Legit", "Blatant"}, "Legit", function(v)
-if GameCallbacks.castMode then GameCallbacks.castMode(v) end
-end)
-Fishing:AddDropdown("Shake Mode", {"Navigation", "Mouse"}, "Navigation", function(v)
+Fishing:AddDropdown("Shake Mode", {"Mouse", "Phantom"}, "Mouse", function(v)
 if GameCallbacks.shakeMode then GameCallbacks.shakeMode(v) end
 end)
-Fishing:AddDropdown("Reel Mode", {"Legit", "Blatant"}, "Blatant", function(v)
-if GameCallbacks.reelMode then GameCallbacks.reelMode(v) end
+Fishing:AddSlider("Shake Delay", 0.3, 0.1, 1.0, function(v)
+if GameCallbacks.shakeDelay then GameCallbacks.shakeDelay(v) end
+end)
+Fishing:AddToggle("No Shake Delay", false, function(v)
+if GameCallbacks.noShakeDelay then GameCallbacks.noShakeDelay(v) end
+end)
+Fishing:AddSeparator()
+Fishing:AddToggle("Freeze Position", false, function(v)
+if GameCallbacks.freeze then GameCallbacks.freeze(v) end
+end)
+Fishing:AddToggle("Anti-AFK", false, function(v)
+if GameCallbacks.antiAfk then GameCallbacks.antiAfk(v) end
 end)
 
 -- Items category
@@ -1403,170 +1400,118 @@ LocalCharacter = char
 HumanoidRootPart = char:WaitForChild("HumanoidRootPart")
 end)
 
+-- Link (new Fisch event path)
+local Link = ReplicatedStorage:FindFirstChild("Link") or (#ReplicatedStorage:GetChildren() > 2 and ReplicatedStorage or ReplicatedStorage:GetChildren()[1])
+
 -- State
-local CastMode = "Legit"
-local ShakeMode = "Navigation"
-local ReelMode = "Blatant"
+local ShakeMode = "Mouse"
 local WalkZone = "Ocean"
 local Noclip = false
 local AutoFreeze = false
+local AutoFish = false
+local AutoCast = false
+local autoReel = false
+local autoShake = false -- mouse mode
+local autoShake2 = false -- phantom mode
+local autoShake3 = false -- no delay mode
+local autoShakeDelay = 0.3
 local DayOnlyLoop = nil
 local NightOnlyLoop = nil
-local autoCastEnabled = false
-local autoShakeEnabled = false
-local autoReelEnabled = false
-local autoShakeConnection = nil
-local autoReelConnection = nil
 
--- ============ AUTO CAST ============
-local function autoCast()
-if not LocalCharacter then return end
-local tool = LocalCharacter:FindFirstChildOfClass("Tool")
-if not tool then return end
-local hasBobber = tool:FindFirstChild("bobber")
-if hasBobber then return end
-if CastMode == "Legit" then
-VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, LocalPlayer, 0)
-HumanoidRootPart.ChildAdded:Connect(function()
-if HumanoidRootPart:FindFirstChild("power") and HumanoidRootPart.power:FindFirstChild("powerbar") and HumanoidRootPart.power.powerbar:FindFirstChild("bar") then
-HumanoidRootPart.power.powerbar.bar.Changed:Connect(function(property)
-if property == "Size" then
-if HumanoidRootPart.power.powerbar.bar.Size == UDim2.new(1, 0, 1, 0) then
-VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, LocalPlayer, 0)
+-- ============ AUTO REEL (blatant via Link) ============
+PlayerGui.ChildAdded:Connect(function(GUI)
+if GUI:IsA("ScreenGui") and GUI.Name == "reel" and autoReel then
+local reelfinishedEvent = Link:WaitForChild("events"):WaitForChild("reelfinished")
+if reelfinishedEvent then
+while GUI do
+task.wait(2)
+reelfinishedEvent:FireServer(100, false)
+end
 end
 end
 end)
-end
-end)
-elseif CastMode == "Blatant" then
-local rod = LocalCharacter:FindFirstChildOfClass("Tool")
-if rod and rod:FindFirstChild("values") and string.find(rod.Name, "Rod") then
-task.wait(0.5)
-rod.events.cast:FireServer(math.random(90, 99))
-end
-end
-end
 
--- ============ AUTO SHAKE ============
-local function autoShake()
-if ShakeMode == "Navigation" then
-task.wait()
-xpcall(function()
-local shakeui = PlayerGui:FindFirstChild("shakeui")
-if not shakeui then return end
-local safezone = shakeui:FindFirstChild("safezone")
-local button = safezone and safezone:FindFirstChild("button")
-task.wait(0.2)
-GuiService.SelectedObject = button
-if GuiService.SelectedObject == button then
-VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
-VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
-end
-task.wait(0.1)
-GuiService.SelectedObject = nil
-end, function() end)
-elseif ShakeMode == "Mouse" then
-task.wait()
-xpcall(function()
-local shakeui = PlayerGui:FindFirstChild("shakeui")
-if not shakeui then return end
-local safezone = shakeui:FindFirstChild("safezone")
-local button = safezone and safezone:FindFirstChild("button")
+-- ============ AUTO SHAKE (loop) ============
+local function AutoFish5()
+if autoShake3 then
+task.spawn(function()
+while AutoFish do
+local shakeUI = PlayerGui:FindFirstChild("shakeui")
+if shakeUI and shakeUI.Enabled then
+local safezone = shakeUI:FindFirstChild("safezone")
+if safezone then
+local button = safezone:FindFirstChild("button")
+if button and button:IsA("ImageButton") and button.Visible then
+if autoShake then
 local pos = button.AbsolutePosition
 local size = button.AbsoluteSize
 VirtualInputManager:SendMouseButtonEvent(pos.X + size.X / 2, pos.Y + size.Y / 2, 0, true, LocalPlayer, 0)
 VirtualInputManager:SendMouseButtonEvent(pos.X + size.X / 2, pos.Y + size.Y / 2, 0, false, LocalPlayer, 0)
-end, function() end)
+elseif autoShake2 then
+GuiService.SelectedObject = button
+VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
+VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
 end
 end
-
-local function startAutoShake()
-if autoShakeConnection or not autoShakeEnabled then return end
-autoShakeConnection = RenderStepped:Connect(autoShake)
-end
-
-local function stopAutoShake()
-if autoShakeConnection then
-autoShakeConnection:Disconnect()
-autoShakeConnection = nil
 end
 end
-
-PlayerGui.DescendantAdded:Connect(function(descendant)
-if autoShakeEnabled and descendant.Name == "button" and descendant.Parent and descendant.Parent.Name == "safezone" then
-startAutoShake()
+task.wait()
 end
 end)
-
-PlayerGui.DescendantAdded:Connect(function(descendant)
-if descendant.Name == "playerbar" and descendant.Parent and descendant.Parent.Name == "bar" then
-stopAutoShake()
+else
+task.spawn(function()
+while AutoFish do
+task.wait(autoShakeDelay)
+local shakeUI = PlayerGui:FindFirstChild("shakeui")
+if shakeUI and shakeUI.Enabled then
+local safezone = shakeUI:FindFirstChild("safezone")
+if safezone then
+local button = safezone:FindFirstChild("button")
+if button and button:IsA("ImageButton") and button.Visible then
+if autoShake then
+local pos = button.AbsolutePosition
+local size = button.AbsoluteSize
+VirtualInputManager:SendMouseButtonEvent(pos.X + size.X / 2, pos.Y + size.Y / 2, 0, true, LocalPlayer, 0)
+VirtualInputManager:SendMouseButtonEvent(pos.X + size.X / 2, pos.Y + size.Y / 2, 0, false, LocalPlayer, 0)
+elseif autoShake2 then
+GuiService.SelectedObject = button
+VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
+VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
+end
+end
+end
+end
 end
 end)
-
--- ============ AUTO REEL ============
-local function autoReel()
-local reel = PlayerGui:FindFirstChild("reel")
-if not reel then return end
-local bar = reel:FindFirstChild("bar")
-local playerbar = bar and bar:FindFirstChild("playerbar")
-local fish = bar and bar:FindFirstChild("fish")
-if playerbar and fish then
-playerbar.Position = fish.Position
 end
 end
 
-local function noperfect()
-local reel = PlayerGui:FindFirstChild("reel")
-if not reel then return end
-local bar = reel:FindFirstChild("bar")
-local playerbar = bar and bar:FindFirstChild("playerbar")
-if playerbar then
-playerbar.Position = UDim2.new(0, 0, -35, 0)
-task.wait(0.2)
-end
-end
-
-local function startAutoReel()
-if ReelMode == "Legit" then
-if autoReelConnection or not autoReelEnabled then return end
-noperfect()
-task.wait(2)
-autoReelConnection = RenderStepped:Connect(autoReel)
-elseif ReelMode == "Blatant" then
-local reel = PlayerGui:FindFirstChild("reel")
-if not reel then return end
-local bar = reel:FindFirstChild("bar")
-local playerbar = bar and bar:FindFirstChild("playerbar")
-if playerbar then
-playerbar:GetPropertyChangedSignal("Position"):Wait()
-ReplicatedStorage:WaitForChild("events"):WaitForChild("reelfinished"):FireServer(100, false)
+-- ============ AUTO CAST (blatant via cast:FireServer) ============
+local function Pidoras()
+spawn(function()
+while AutoCast do
+local character = LocalPlayer.Character
+if character then
+local tool = character:FindFirstChildOfClass("Tool")
+if tool then
+local hasBobber = tool:FindFirstChild("bobber")
+if not hasBobber then
+local castEvent = tool:FindFirstChild("events") and tool.events:FindFirstChild("cast")
+if castEvent then
+local Random2 = math.random(90, 99)
+castEvent:FireServer(Random2)
+local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+if humanoidRootPart then
+humanoidRootPart.Anchored = false
 end
 end
 end
-
-local function stopAutoReel()
-if autoReelConnection then
-autoReelConnection:Disconnect()
-autoReelConnection = nil
 end
-end
-
-PlayerGui.DescendantAdded:Connect(function(descendant)
-if autoReelEnabled and descendant.Name == "playerbar" and descendant.Parent and descendant.Parent.Name == "bar" then
-startAutoReel()
-end
-end)
-
-PlayerGui.DescendantRemoving:Connect(function(descendant)
-if descendant.Name == "playerbar" and descendant.Parent and descendant.Parent.Name == "bar" then
-stopAutoReel()
-if autoCastEnabled then
 task.wait(1)
-autoCast()
 end
 end
 end)
+end
 
 -- ============ SELL FUNCTIONS ============
 local function rememberPosition()
@@ -1667,54 +1612,74 @@ Tempest = CFrame.new(35, 133, 1943),
 
 -- ============ POPULATE CALLBACKS ============
 
-GameCallbacks.autoCast = function(v)
-autoCastEnabled = v
-if v then
-pcall(function()
-local RodName = ReplicatedStorage.playerstats[LocalPlayer.Name].Stats.rod.Value
-if RodName and LocalPlayer.Backpack:FindFirstChild(RodName) then
-LocalPlayer.Character.Humanoid:EquipTool(LocalPlayer.Backpack:FindFirstChild(RodName))
+GameCallbacks.autoFish = function(v)
+AutoFish = v
+autoReel = v
+AutoCast = v
+if AutoCast then
+Pidoras()
 end
-end)
-task.spawn(function()
-while autoCastEnabled do
-pcall(autoCast)
-task.wait(1)
+if ShakeMode == "Mouse" then
+autoShake = v
+autoShake2 = false
+elseif ShakeMode == "Phantom" then
+autoShake2 = v
+autoShake = false
 end
-end)
+AutoFish5()
+if AutoCast and LocalCharacter and LocalCharacter:FindFirstChildOfClass("Tool") then
+local Tool = LocalCharacter:FindFirstChildOfClass("Tool")
+if Tool:FindFirstChild("events") and Tool.events:FindFirstChild("cast") then
+local Random2 = math.random(90, 99)
+Tool.events.cast:FireServer(Random2)
 end
-Library:Notify("Auto Cast: " .. (v and "ON" or "OFF"), v and "success" or "error")
 end
-
-GameCallbacks.autoShake = function(v)
-autoShakeEnabled = v
-if v then startAutoShake() else stopAutoShake() end
-Library:Notify("Auto Shake: " .. (v and "ON" or "OFF"), v and "success" or "error")
-end
-
-GameCallbacks.autoReel = function(v)
-autoReelEnabled = v
-if v then startAutoReel() else stopAutoReel() end
-Library:Notify("Auto Reel: " .. (v and "ON" or "OFF"), v and "success" or "error")
+Library:Notify("Auto Fish: " .. (v and "ON" or "OFF"), v and "success" or "error")
 end
 
-local FreezeChar = false
+GameCallbacks.shakeMode = function(v)
+ShakeMode = v
+if AutoFish then
+if v == "Mouse" then
+autoShake = true
+autoShake2 = false
+elseif v == "Phantom" then
+autoShake2 = true
+autoShake = false
+end
+end
+end
+
+GameCallbacks.shakeDelay = function(v)
+autoShakeDelay = v
+end
+
+GameCallbacks.noShakeDelay = function(v)
+autoShake3 = v
+if AutoFish then
+AutoFish5()
+end
+end
+
 GameCallbacks.freeze = function(v)
-FreezeChar = v
-if v and HumanoidRootPart then
-local oldpos = HumanoidRootPart.CFrame
+AutoFreeze = v
+if v then
+rememberPosition()
+end
+end
+
+GameCallbacks.antiAfk = function(v)
+if v then
 task.spawn(function()
-while FreezeChar and HumanoidRootPart do
-HumanoidRootPart.CFrame = oldpos
-task.wait()
+while v do
+pcall(function()
+Link:WaitForChild("events"):WaitForChild("afk"):FireServer(false)
+end)
+task.wait(0.01)
 end
 end)
 end
 end
-
-GameCallbacks.castMode = function(v) CastMode = v end
-GameCallbacks.shakeMode = function(v) ShakeMode = v end
-GameCallbacks.reelMode = function(v) ReelMode = v end
 
 GameCallbacks.sellHand = function() task.spawn(SellHand) end
 GameCallbacks.sellAll = function() task.spawn(SellAll) end

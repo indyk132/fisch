@@ -14,65 +14,6 @@ local ImportGlobals
 
 -- Holds direct closure data (defining this before the DOM tree for line debugging etc)
 local ClosureBindings = {
-    [10] = function()local wax,script,require=ImportGlobals(10)local ImportGlobals return (function(...)--[[
-	Theme Module - Template (Based on Nova)
-	Centralized color definitions for consistent UI theming.
-	
-	Usage:
-		local Theme = require(path.to.Theme)
-		frame.BackgroundColor3 = Theme.Background
-]]
-
-local Theme = {
-	-- Base colors
-	Background = Color3.fromRGB(15, 15, 15),
-	Surface = Color3.fromRGB(20, 20, 20),
-	SurfaceHover = Color3.fromRGB(28, 28, 28),
-	
-	-- Border colors
-	Border = Color3.fromRGB(40, 40, 40),
-	BorderLight = Color3.fromRGB(55, 55, 55),
-	
-	-- Text colors
-	Text = Color3.fromRGB(220, 220, 220),
-	TextMuted = Color3.fromRGB(140, 140, 140),
-	
-	-- Accent colors
-	Accent = Color3.fromRGB(88, 101, 242),
-	AccentHover = Color3.fromRGB(98, 111, 252),
-	
-	-- Status colors
-	Success = Color3.fromRGB(63, 185, 80),
-	Warning = Color3.fromRGB(210, 153, 34),
-	Error = Color3.fromRGB(248, 81, 73),
-	Info = Color3.fromRGB(88, 166, 255),
-	
-	-- Direction colors (from Nova's Incoming/Outgoing)
-	Primary = Color3.fromRGB(63, 185, 80),
-	Secondary = Color3.fromRGB(247, 129, 102),
-}
-
--- Utility function to lighten a color
-function Theme.Lighten(color: Color3, amount: number): Color3
-	return Color3.new(
-		math.min(color.R + amount, 1),
-		math.min(color.G + amount, 1),
-		math.min(color.B + amount, 1)
-	)
-end
-
--- Utility function to darken a color
-function Theme.Darken(color: Color3, amount: number): Color3
-	return Color3.new(
-		math.max(color.R - amount, 0),
-		math.max(color.G - amount, 0),
-		math.max(color.B - amount, 0)
-	)
-end
-
-return Theme
-
-end)() end,
     [2] = function()local wax,script,require=ImportGlobals(2)local ImportGlobals return (function(...)--[[
 	Nova UI Library
 	General-purpose executor GUI framework with Nova's visual style.
@@ -1337,27 +1278,24 @@ local GameCallbacks = {}
 
 -- Fishing category
 local Fishing = Library:AddCategory("Fishing", "anchor")
-Fishing:AddToggle("Auto Cast", false, function(v)
-if GameCallbacks.autoCast then GameCallbacks.autoCast(v) end
+Fishing:AddToggle("Auto Fish", false, function(v)
+if GameCallbacks.autoFish then GameCallbacks.autoFish(v) end
 end)
-Fishing:AddToggle("Auto Shake", false, function(v)
-if GameCallbacks.autoShake then GameCallbacks.autoShake(v) end
-end)
-Fishing:AddToggle("Auto Reel", false, function(v)
-if GameCallbacks.autoReel then GameCallbacks.autoReel(v) end
-end)
-Fishing:AddToggle("Freeze Character", false, function(v)
-if GameCallbacks.freeze then GameCallbacks.freeze(v) end
-end)
-Fishing:AddSeparator()
-Fishing:AddDropdown("Cast Mode", {"Legit", "Blatant"}, "Legit", function(v)
-if GameCallbacks.castMode then GameCallbacks.castMode(v) end
-end)
-Fishing:AddDropdown("Shake Mode", {"Navigation", "Mouse"}, "Navigation", function(v)
+Fishing:AddDropdown("Shake Mode", {"Mouse", "Phantom"}, "Mouse", function(v)
 if GameCallbacks.shakeMode then GameCallbacks.shakeMode(v) end
 end)
-Fishing:AddDropdown("Reel Mode", {"Legit", "Blatant"}, "Blatant", function(v)
-if GameCallbacks.reelMode then GameCallbacks.reelMode(v) end
+Fishing:AddSlider("Shake Delay", 0.3, 0.1, 1.0, function(v)
+if GameCallbacks.shakeDelay then GameCallbacks.shakeDelay(v) end
+end)
+Fishing:AddToggle("No Shake Delay", false, function(v)
+if GameCallbacks.noShakeDelay then GameCallbacks.noShakeDelay(v) end
+end)
+Fishing:AddSeparator()
+Fishing:AddToggle("Freeze Position", false, function(v)
+if GameCallbacks.freeze then GameCallbacks.freeze(v) end
+end)
+Fishing:AddToggle("Anti-AFK", false, function(v)
+if GameCallbacks.antiAfk then GameCallbacks.antiAfk(v) end
 end)
 
 -- Items category
@@ -1478,170 +1416,118 @@ LocalCharacter = char
 HumanoidRootPart = char:WaitForChild("HumanoidRootPart")
 end)
 
+-- Link (new Fisch event path)
+local Link = ReplicatedStorage:FindFirstChild("Link") or (#ReplicatedStorage:GetChildren() > 2 and ReplicatedStorage or ReplicatedStorage:GetChildren()[1])
+
 -- State
-local CastMode = "Legit"
-local ShakeMode = "Navigation"
-local ReelMode = "Blatant"
+local ShakeMode = "Mouse"
 local WalkZone = "Ocean"
 local Noclip = false
 local AutoFreeze = false
+local AutoFish = false
+local AutoCast = false
+local autoReel = false
+local autoShake = false -- mouse mode
+local autoShake2 = false -- phantom mode
+local autoShake3 = false -- no delay mode
+local autoShakeDelay = 0.3
 local DayOnlyLoop = nil
 local NightOnlyLoop = nil
-local autoCastEnabled = false
-local autoShakeEnabled = false
-local autoReelEnabled = false
-local autoShakeConnection = nil
-local autoReelConnection = nil
 
--- ============ AUTO CAST ============
-local function autoCast()
-if not LocalCharacter then return end
-local tool = LocalCharacter:FindFirstChildOfClass("Tool")
-if not tool then return end
-local hasBobber = tool:FindFirstChild("bobber")
-if hasBobber then return end
-if CastMode == "Legit" then
-VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, LocalPlayer, 0)
-HumanoidRootPart.ChildAdded:Connect(function()
-if HumanoidRootPart:FindFirstChild("power") and HumanoidRootPart.power:FindFirstChild("powerbar") and HumanoidRootPart.power.powerbar:FindFirstChild("bar") then
-HumanoidRootPart.power.powerbar.bar.Changed:Connect(function(property)
-if property == "Size" then
-if HumanoidRootPart.power.powerbar.bar.Size == UDim2.new(1, 0, 1, 0) then
-VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, LocalPlayer, 0)
+-- ============ AUTO REEL (blatant via Link) ============
+PlayerGui.ChildAdded:Connect(function(GUI)
+if GUI:IsA("ScreenGui") and GUI.Name == "reel" and autoReel then
+local reelfinishedEvent = Link:WaitForChild("events"):WaitForChild("reelfinished")
+if reelfinishedEvent then
+while GUI do
+task.wait(2)
+reelfinishedEvent:FireServer(100, false)
+end
 end
 end
 end)
-end
-end)
-elseif CastMode == "Blatant" then
-local rod = LocalCharacter:FindFirstChildOfClass("Tool")
-if rod and rod:FindFirstChild("values") and string.find(rod.Name, "Rod") then
-task.wait(0.5)
-rod.events.cast:FireServer(math.random(90, 99))
-end
-end
-end
 
--- ============ AUTO SHAKE ============
-local function autoShake()
-if ShakeMode == "Navigation" then
-task.wait()
-xpcall(function()
-local shakeui = PlayerGui:FindFirstChild("shakeui")
-if not shakeui then return end
-local safezone = shakeui:FindFirstChild("safezone")
-local button = safezone and safezone:FindFirstChild("button")
-task.wait(0.2)
-GuiService.SelectedObject = button
-if GuiService.SelectedObject == button then
-VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
-VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
-end
-task.wait(0.1)
-GuiService.SelectedObject = nil
-end, function() end)
-elseif ShakeMode == "Mouse" then
-task.wait()
-xpcall(function()
-local shakeui = PlayerGui:FindFirstChild("shakeui")
-if not shakeui then return end
-local safezone = shakeui:FindFirstChild("safezone")
-local button = safezone and safezone:FindFirstChild("button")
+-- ============ AUTO SHAKE (loop) ============
+local function AutoFish5()
+if autoShake3 then
+task.spawn(function()
+while AutoFish do
+local shakeUI = PlayerGui:FindFirstChild("shakeui")
+if shakeUI and shakeUI.Enabled then
+local safezone = shakeUI:FindFirstChild("safezone")
+if safezone then
+local button = safezone:FindFirstChild("button")
+if button and button:IsA("ImageButton") and button.Visible then
+if autoShake then
 local pos = button.AbsolutePosition
 local size = button.AbsoluteSize
 VirtualInputManager:SendMouseButtonEvent(pos.X + size.X / 2, pos.Y + size.Y / 2, 0, true, LocalPlayer, 0)
 VirtualInputManager:SendMouseButtonEvent(pos.X + size.X / 2, pos.Y + size.Y / 2, 0, false, LocalPlayer, 0)
-end, function() end)
+elseif autoShake2 then
+GuiService.SelectedObject = button
+VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
+VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
 end
 end
-
-local function startAutoShake()
-if autoShakeConnection or not autoShakeEnabled then return end
-autoShakeConnection = RenderStepped:Connect(autoShake)
-end
-
-local function stopAutoShake()
-if autoShakeConnection then
-autoShakeConnection:Disconnect()
-autoShakeConnection = nil
 end
 end
-
-PlayerGui.DescendantAdded:Connect(function(descendant)
-if autoShakeEnabled and descendant.Name == "button" and descendant.Parent and descendant.Parent.Name == "safezone" then
-startAutoShake()
+task.wait()
 end
 end)
-
-PlayerGui.DescendantAdded:Connect(function(descendant)
-if descendant.Name == "playerbar" and descendant.Parent and descendant.Parent.Name == "bar" then
-stopAutoShake()
+else
+task.spawn(function()
+while AutoFish do
+task.wait(autoShakeDelay)
+local shakeUI = PlayerGui:FindFirstChild("shakeui")
+if shakeUI and shakeUI.Enabled then
+local safezone = shakeUI:FindFirstChild("safezone")
+if safezone then
+local button = safezone:FindFirstChild("button")
+if button and button:IsA("ImageButton") and button.Visible then
+if autoShake then
+local pos = button.AbsolutePosition
+local size = button.AbsoluteSize
+VirtualInputManager:SendMouseButtonEvent(pos.X + size.X / 2, pos.Y + size.Y / 2, 0, true, LocalPlayer, 0)
+VirtualInputManager:SendMouseButtonEvent(pos.X + size.X / 2, pos.Y + size.Y / 2, 0, false, LocalPlayer, 0)
+elseif autoShake2 then
+GuiService.SelectedObject = button
+VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
+VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
+end
+end
+end
+end
 end
 end)
-
--- ============ AUTO REEL ============
-local function autoReel()
-local reel = PlayerGui:FindFirstChild("reel")
-if not reel then return end
-local bar = reel:FindFirstChild("bar")
-local playerbar = bar and bar:FindFirstChild("playerbar")
-local fish = bar and bar:FindFirstChild("fish")
-if playerbar and fish then
-playerbar.Position = fish.Position
 end
 end
 
-local function noperfect()
-local reel = PlayerGui:FindFirstChild("reel")
-if not reel then return end
-local bar = reel:FindFirstChild("bar")
-local playerbar = bar and bar:FindFirstChild("playerbar")
-if playerbar then
-playerbar.Position = UDim2.new(0, 0, -35, 0)
-task.wait(0.2)
-end
-end
-
-local function startAutoReel()
-if ReelMode == "Legit" then
-if autoReelConnection or not autoReelEnabled then return end
-noperfect()
-task.wait(2)
-autoReelConnection = RenderStepped:Connect(autoReel)
-elseif ReelMode == "Blatant" then
-local reel = PlayerGui:FindFirstChild("reel")
-if not reel then return end
-local bar = reel:FindFirstChild("bar")
-local playerbar = bar and bar:FindFirstChild("playerbar")
-if playerbar then
-playerbar:GetPropertyChangedSignal("Position"):Wait()
-ReplicatedStorage:WaitForChild("events"):WaitForChild("reelfinished"):FireServer(100, false)
+-- ============ AUTO CAST (blatant via cast:FireServer) ============
+local function Pidoras()
+spawn(function()
+while AutoCast do
+local character = LocalPlayer.Character
+if character then
+local tool = character:FindFirstChildOfClass("Tool")
+if tool then
+local hasBobber = tool:FindFirstChild("bobber")
+if not hasBobber then
+local castEvent = tool:FindFirstChild("events") and tool.events:FindFirstChild("cast")
+if castEvent then
+local Random2 = math.random(90, 99)
+castEvent:FireServer(Random2)
+local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+if humanoidRootPart then
+humanoidRootPart.Anchored = false
 end
 end
 end
-
-local function stopAutoReel()
-if autoReelConnection then
-autoReelConnection:Disconnect()
-autoReelConnection = nil
 end
-end
-
-PlayerGui.DescendantAdded:Connect(function(descendant)
-if autoReelEnabled and descendant.Name == "playerbar" and descendant.Parent and descendant.Parent.Name == "bar" then
-startAutoReel()
-end
-end)
-
-PlayerGui.DescendantRemoving:Connect(function(descendant)
-if descendant.Name == "playerbar" and descendant.Parent and descendant.Parent.Name == "bar" then
-stopAutoReel()
-if autoCastEnabled then
 task.wait(1)
-autoCast()
 end
 end
 end)
+end
 
 -- ============ SELL FUNCTIONS ============
 local function rememberPosition()
@@ -1742,54 +1628,74 @@ Tempest = CFrame.new(35, 133, 1943),
 
 -- ============ POPULATE CALLBACKS ============
 
-GameCallbacks.autoCast = function(v)
-autoCastEnabled = v
-if v then
-pcall(function()
-local RodName = ReplicatedStorage.playerstats[LocalPlayer.Name].Stats.rod.Value
-if RodName and LocalPlayer.Backpack:FindFirstChild(RodName) then
-LocalPlayer.Character.Humanoid:EquipTool(LocalPlayer.Backpack:FindFirstChild(RodName))
+GameCallbacks.autoFish = function(v)
+AutoFish = v
+autoReel = v
+AutoCast = v
+if AutoCast then
+Pidoras()
 end
-end)
-task.spawn(function()
-while autoCastEnabled do
-pcall(autoCast)
-task.wait(1)
+if ShakeMode == "Mouse" then
+autoShake = v
+autoShake2 = false
+elseif ShakeMode == "Phantom" then
+autoShake2 = v
+autoShake = false
 end
-end)
+AutoFish5()
+if AutoCast and LocalCharacter and LocalCharacter:FindFirstChildOfClass("Tool") then
+local Tool = LocalCharacter:FindFirstChildOfClass("Tool")
+if Tool:FindFirstChild("events") and Tool.events:FindFirstChild("cast") then
+local Random2 = math.random(90, 99)
+Tool.events.cast:FireServer(Random2)
 end
-Library:Notify("Auto Cast: " .. (v and "ON" or "OFF"), v and "success" or "error")
 end
-
-GameCallbacks.autoShake = function(v)
-autoShakeEnabled = v
-if v then startAutoShake() else stopAutoShake() end
-Library:Notify("Auto Shake: " .. (v and "ON" or "OFF"), v and "success" or "error")
-end
-
-GameCallbacks.autoReel = function(v)
-autoReelEnabled = v
-if v then startAutoReel() else stopAutoReel() end
-Library:Notify("Auto Reel: " .. (v and "ON" or "OFF"), v and "success" or "error")
+Library:Notify("Auto Fish: " .. (v and "ON" or "OFF"), v and "success" or "error")
 end
 
-local FreezeChar = false
+GameCallbacks.shakeMode = function(v)
+ShakeMode = v
+if AutoFish then
+if v == "Mouse" then
+autoShake = true
+autoShake2 = false
+elseif v == "Phantom" then
+autoShake2 = true
+autoShake = false
+end
+end
+end
+
+GameCallbacks.shakeDelay = function(v)
+autoShakeDelay = v
+end
+
+GameCallbacks.noShakeDelay = function(v)
+autoShake3 = v
+if AutoFish then
+AutoFish5()
+end
+end
+
 GameCallbacks.freeze = function(v)
-FreezeChar = v
-if v and HumanoidRootPart then
-local oldpos = HumanoidRootPart.CFrame
+AutoFreeze = v
+if v then
+rememberPosition()
+end
+end
+
+GameCallbacks.antiAfk = function(v)
+if v then
 task.spawn(function()
-while FreezeChar and HumanoidRootPart do
-HumanoidRootPart.CFrame = oldpos
-task.wait()
+while v do
+pcall(function()
+Link:WaitForChild("events"):WaitForChild("afk"):FireServer(false)
+end)
+task.wait(0.01)
 end
 end)
 end
 end
-
-GameCallbacks.castMode = function(v) CastMode = v end
-GameCallbacks.shakeMode = function(v) ShakeMode = v end
-GameCallbacks.reelMode = function(v) ReelMode = v end
 
 GameCallbacks.sellHand = function() task.spawn(SellHand) end
 GameCallbacks.sellAll = function() task.spawn(SellAll) end
@@ -2062,6 +1968,291 @@ end)
 Library:Notify("Nova Fisch loaded!", "success")
 
 return Library
+end)() end,
+    [4] = function()local wax,script,require=ImportGlobals(4)local ImportGlobals return (function(...)--[[
+	Drag Module - Template
+	Enables drag functionality on UI frames.
+	Supports UIScale by dividing delta by a scale factor.
+	
+	Usage:
+		local Drag = require(path.to.Drag)
+		
+		-- Basic usage
+		Drag.new(mainFrame, titleBar)
+		
+		-- With DPI/UIScale support
+		Drag.new(mainFrame, titleBar, function()
+			return uiScale.Scale
+		end)
+]]
+
+local Drag = {}
+Drag.__index = Drag
+
+local UserInputService = game:GetService("UserInputService")
+
+export type DragObject = {
+	Frame: Frame,
+	Handle: Frame,
+	Enabled: boolean,
+	SetEnabled: (self: DragObject, enabled: boolean) -> (),
+	Destroy: (self: DragObject) -> (),
+}
+
+--[[
+	Create a new draggable frame
+	@param frame The main frame to move
+	@param handle The frame to use as drag handle (defaults to frame itself)
+	@param getScale Optional function returning the current UI scale
+	@return DragObject
+]]
+function Drag.new(frame: Frame, handle: Frame?, getScale: (() -> number)?): DragObject
+	handle = handle or frame
+	getScale = getScale or function() return 1 end
+
+	local self = setmetatable({}, Drag)
+	self.Frame = frame
+	self.Handle = handle
+	self.Enabled = true
+
+	local dragging = false
+	local dragStart = nil
+	local startPos = nil
+	local connections = {}
+
+	table.insert(connections, handle.InputBegan:Connect(function(input)
+		if not self.Enabled then return end
+		
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			dragStart = input.Position
+			startPos = frame.Position
+
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					dragging = false
+				end
+			end)
+		end
+	end))
+
+	table.insert(connections, UserInputService.InputChanged:Connect(function(input)
+		if not self.Enabled then return end
+		
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			local scale = getScale()
+			local delta = input.Position - dragStart
+			local newPosition = UDim2.new(
+				startPos.X.Scale,
+				startPos.X.Offset + delta.X / scale,
+				startPos.Y.Scale,
+				startPos.Y.Offset + delta.Y / scale
+			)
+			frame.Position = newPosition
+		end
+	end))
+
+	function self:SetEnabled(enabled: boolean)
+		self.Enabled = enabled
+		if not enabled then
+			dragging = false
+		end
+	end
+
+	function self:Destroy()
+		for _, connection in ipairs(connections) do
+			connection:Disconnect()
+		end
+		connections = {}
+	end
+
+	return self
+end
+
+return Drag
+
+end)() end,
+    [5] = function()local wax,script,require=ImportGlobals(5)local ImportGlobals return (function(...)--[[
+	Helper Module - Template
+	Various UI utility functions for common interactions.
+	
+	Usage:
+		local Helper = require(path.to.Helper)
+		Helper.HoverEffect(button, hoverColor, normalColor)
+		Helper.Ripple(button)
+]]
+
+local Helper = {}
+
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+
+--[[
+	Add ripple effect to a button on click
+	@param button The button to add ripple effect to
+	@param color Optional ripple color (default: white)
+]]
+function Helper.Ripple(button: TextButton | ImageButton, color: Color3?)
+	color = color or Color3.fromRGB(255, 255, 255)
+	button.ClipsDescendants = true
+
+	button.MouseButton1Click:Connect(function()
+		local mouse = UserInputService:GetMouseLocation()
+		local absolutePos = button.AbsolutePosition
+		local relativeX = mouse.X - absolutePos.X
+		local relativeY = mouse.Y - absolutePos.Y
+
+		local circle = Instance.new("Frame")
+		circle.BackgroundColor3 = color
+		circle.BackgroundTransparency = 0.7
+		circle.Position = UDim2.fromOffset(relativeX, relativeY)
+		circle.AnchorPoint = Vector2.new(0.5, 0.5)
+		circle.Size = UDim2.fromOffset(0, 0)
+
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = UDim.new(1, 0)
+		corner.Parent = circle
+
+		circle.Parent = button
+
+		local size = math.max(button.AbsoluteSize.X, button.AbsoluteSize.Y) * 2
+		local tween = TweenService:Create(circle, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Size = UDim2.fromOffset(size, size),
+			BackgroundTransparency = 1,
+		})
+
+		tween:Play()
+		tween.Completed:Connect(function()
+			circle:Destroy()
+		end)
+	end)
+end
+
+--[[
+	Add hover effect to a UI element
+	@param element The UI element to add hover effect to
+	@param hoverColor Color when hovered
+	@param normalColor Color when not hovered (defaults to current BackgroundColor3)
+]]
+function Helper.HoverEffect(element: GuiObject, hoverColor: Color3?, normalColor: Color3?)
+	normalColor = normalColor or element.BackgroundColor3
+	hoverColor = hoverColor or Color3.fromRGB(
+		math.min(normalColor.R * 255 + 20, 255) / 255,
+		math.min(normalColor.G * 255 + 20, 255) / 255,
+		math.min(normalColor.B * 255 + 20, 255) / 255
+	)
+
+	element.MouseEnter:Connect(function()
+		TweenService:Create(element, TweenInfo.new(0.15), {
+			BackgroundColor3 = hoverColor,
+		}):Play()
+	end)
+
+	element.MouseLeave:Connect(function()
+		TweenService:Create(element, TweenInfo.new(0.15), {
+			BackgroundColor3 = normalColor,
+		}):Play()
+	end)
+end
+
+--[[
+	Add hover transparency effect to a UI element
+	@param element The UI element
+	@param hoverTransparency Transparency when hovered
+	@param normalTransparency Transparency when not hovered
+]]
+function Helper.HoverTransparency(element: GuiObject, hoverTransparency: number?, normalTransparency: number?)
+	normalTransparency = normalTransparency or element.BackgroundTransparency
+	hoverTransparency = hoverTransparency or math.max(normalTransparency - 0.2, 0)
+
+	element.MouseEnter:Connect(function()
+		TweenService:Create(element, TweenInfo.new(0.15), {
+			BackgroundTransparency = hoverTransparency,
+		}):Play()
+	end)
+
+	element.MouseLeave:Connect(function()
+		TweenService:Create(element, TweenInfo.new(0.15), {
+			BackgroundTransparency = normalTransparency,
+		}):Play()
+	end)
+end
+
+--[[
+	Truncate text to a maximum length
+	@param text The text to truncate
+	@param maxLength Maximum length before truncation
+	@return Truncated text with "..." if needed
+]]
+function Helper.Truncate(text: string, maxLength: number): string
+	if #text <= maxLength then
+		return text
+	end
+	return string.sub(text, 1, maxLength - 3) .. "..."
+end
+
+--[[
+	Format a large number to a readable string (e.g., 1.5K, 2.3M)
+	@param num The number to format
+	@return Formatted string
+]]
+function Helper.FormatNumber(num: number): string
+	if num >= 1000000 then
+		return string.format("%.1fM", num / 1000000)
+	elseif num >= 1000 then
+		return string.format("%.1fK", num / 1000)
+	end
+	return tostring(num)
+end
+
+--[[
+	Format seconds to HH:MM:SS timestamp
+	@param timestamp Time in seconds
+	@return Formatted timestamp string
+]]
+function Helper.FormatTimestamp(timestamp: number): string
+	local seconds = math.floor(timestamp) % 60
+	local minutes = math.floor(timestamp / 60) % 60
+	local hours = math.floor(timestamp / 3600) % 24
+	return string.format("%02d:%02d:%02d", hours, minutes, seconds)
+end
+
+--[[
+	Create a debounced version of a function
+	@param func The function to debounce
+	@param wait Wait time in seconds
+	@return Debounced function
+]]
+function Helper.Debounce(func: (...any) -> (), wait: number): (...any) -> ()
+	local lastCall = 0
+	return function(...)
+		local now = tick()
+		if now - lastCall >= wait then
+			lastCall = now
+			func(...)
+		end
+	end
+end
+
+--[[
+	Tween a UI element with default settings
+	@param element The UI element to tween
+	@param properties Properties to tween to
+	@param duration Optional duration (default: 0.2)
+	@return The Tween object
+]]
+function Helper.Tween(element: Instance, properties: { [string]: any }, duration: number?): Tween
+	local tween = TweenService:Create(
+		element,
+		TweenInfo.new(duration or 0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		properties
+	)
+	tween:Play()
+	return tween
+end
+
+return Helper
+
 end)() end,
     [6] = function()local wax,script,require=ImportGlobals(6)local ImportGlobals return (function(...)--[[
 	Icons Module - Template
@@ -2739,289 +2930,63 @@ end
 return Sonner
 
 end)() end,
-    [5] = function()local wax,script,require=ImportGlobals(5)local ImportGlobals return (function(...)--[[
-	Helper Module - Template
-	Various UI utility functions for common interactions.
+    [10] = function()local wax,script,require=ImportGlobals(10)local ImportGlobals return (function(...)--[[
+	Theme Module - Template (Based on Nova)
+	Centralized color definitions for consistent UI theming.
 	
 	Usage:
-		local Helper = require(path.to.Helper)
-		Helper.HoverEffect(button, hoverColor, normalColor)
-		Helper.Ripple(button)
+		local Theme = require(path.to.Theme)
+		frame.BackgroundColor3 = Theme.Background
 ]]
 
-local Helper = {}
-
-local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
-
---[[
-	Add ripple effect to a button on click
-	@param button The button to add ripple effect to
-	@param color Optional ripple color (default: white)
-]]
-function Helper.Ripple(button: TextButton | ImageButton, color: Color3?)
-	color = color or Color3.fromRGB(255, 255, 255)
-	button.ClipsDescendants = true
-
-	button.MouseButton1Click:Connect(function()
-		local mouse = UserInputService:GetMouseLocation()
-		local absolutePos = button.AbsolutePosition
-		local relativeX = mouse.X - absolutePos.X
-		local relativeY = mouse.Y - absolutePos.Y
-
-		local circle = Instance.new("Frame")
-		circle.BackgroundColor3 = color
-		circle.BackgroundTransparency = 0.7
-		circle.Position = UDim2.fromOffset(relativeX, relativeY)
-		circle.AnchorPoint = Vector2.new(0.5, 0.5)
-		circle.Size = UDim2.fromOffset(0, 0)
-
-		local corner = Instance.new("UICorner")
-		corner.CornerRadius = UDim.new(1, 0)
-		corner.Parent = circle
-
-		circle.Parent = button
-
-		local size = math.max(button.AbsoluteSize.X, button.AbsoluteSize.Y) * 2
-		local tween = TweenService:Create(circle, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-			Size = UDim2.fromOffset(size, size),
-			BackgroundTransparency = 1,
-		})
-
-		tween:Play()
-		tween.Completed:Connect(function()
-			circle:Destroy()
-		end)
-	end)
-end
-
---[[
-	Add hover effect to a UI element
-	@param element The UI element to add hover effect to
-	@param hoverColor Color when hovered
-	@param normalColor Color when not hovered (defaults to current BackgroundColor3)
-]]
-function Helper.HoverEffect(element: GuiObject, hoverColor: Color3?, normalColor: Color3?)
-	normalColor = normalColor or element.BackgroundColor3
-	hoverColor = hoverColor or Color3.fromRGB(
-		math.min(normalColor.R * 255 + 20, 255) / 255,
-		math.min(normalColor.G * 255 + 20, 255) / 255,
-		math.min(normalColor.B * 255 + 20, 255) / 255
-	)
-
-	element.MouseEnter:Connect(function()
-		TweenService:Create(element, TweenInfo.new(0.15), {
-			BackgroundColor3 = hoverColor,
-		}):Play()
-	end)
-
-	element.MouseLeave:Connect(function()
-		TweenService:Create(element, TweenInfo.new(0.15), {
-			BackgroundColor3 = normalColor,
-		}):Play()
-	end)
-end
-
---[[
-	Add hover transparency effect to a UI element
-	@param element The UI element
-	@param hoverTransparency Transparency when hovered
-	@param normalTransparency Transparency when not hovered
-]]
-function Helper.HoverTransparency(element: GuiObject, hoverTransparency: number?, normalTransparency: number?)
-	normalTransparency = normalTransparency or element.BackgroundTransparency
-	hoverTransparency = hoverTransparency or math.max(normalTransparency - 0.2, 0)
-
-	element.MouseEnter:Connect(function()
-		TweenService:Create(element, TweenInfo.new(0.15), {
-			BackgroundTransparency = hoverTransparency,
-		}):Play()
-	end)
-
-	element.MouseLeave:Connect(function()
-		TweenService:Create(element, TweenInfo.new(0.15), {
-			BackgroundTransparency = normalTransparency,
-		}):Play()
-	end)
-end
-
---[[
-	Truncate text to a maximum length
-	@param text The text to truncate
-	@param maxLength Maximum length before truncation
-	@return Truncated text with "..." if needed
-]]
-function Helper.Truncate(text: string, maxLength: number): string
-	if #text <= maxLength then
-		return text
-	end
-	return string.sub(text, 1, maxLength - 3) .. "..."
-end
-
---[[
-	Format a large number to a readable string (e.g., 1.5K, 2.3M)
-	@param num The number to format
-	@return Formatted string
-]]
-function Helper.FormatNumber(num: number): string
-	if num >= 1000000 then
-		return string.format("%.1fM", num / 1000000)
-	elseif num >= 1000 then
-		return string.format("%.1fK", num / 1000)
-	end
-	return tostring(num)
-end
-
---[[
-	Format seconds to HH:MM:SS timestamp
-	@param timestamp Time in seconds
-	@return Formatted timestamp string
-]]
-function Helper.FormatTimestamp(timestamp: number): string
-	local seconds = math.floor(timestamp) % 60
-	local minutes = math.floor(timestamp / 60) % 60
-	local hours = math.floor(timestamp / 3600) % 24
-	return string.format("%02d:%02d:%02d", hours, minutes, seconds)
-end
-
---[[
-	Create a debounced version of a function
-	@param func The function to debounce
-	@param wait Wait time in seconds
-	@return Debounced function
-]]
-function Helper.Debounce(func: (...any) -> (), wait: number): (...any) -> ()
-	local lastCall = 0
-	return function(...)
-		local now = tick()
-		if now - lastCall >= wait then
-			lastCall = now
-			func(...)
-		end
-	end
-end
-
---[[
-	Tween a UI element with default settings
-	@param element The UI element to tween
-	@param properties Properties to tween to
-	@param duration Optional duration (default: 0.2)
-	@return The Tween object
-]]
-function Helper.Tween(element: Instance, properties: { [string]: any }, duration: number?): Tween
-	local tween = TweenService:Create(
-		element,
-		TweenInfo.new(duration or 0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-		properties
-	)
-	tween:Play()
-	return tween
-end
-
-return Helper
-
-end)() end,
-    [4] = function()local wax,script,require=ImportGlobals(4)local ImportGlobals return (function(...)--[[
-	Drag Module - Template
-	Enables drag functionality on UI frames.
-	Supports UIScale by dividing delta by a scale factor.
+local Theme = {
+	-- Base colors
+	Background = Color3.fromRGB(15, 15, 15),
+	Surface = Color3.fromRGB(20, 20, 20),
+	SurfaceHover = Color3.fromRGB(28, 28, 28),
 	
-	Usage:
-		local Drag = require(path.to.Drag)
-		
-		-- Basic usage
-		Drag.new(mainFrame, titleBar)
-		
-		-- With DPI/UIScale support
-		Drag.new(mainFrame, titleBar, function()
-			return uiScale.Scale
-		end)
-]]
-
-local Drag = {}
-Drag.__index = Drag
-
-local UserInputService = game:GetService("UserInputService")
-
-export type DragObject = {
-	Frame: Frame,
-	Handle: Frame,
-	Enabled: boolean,
-	SetEnabled: (self: DragObject, enabled: boolean) -> (),
-	Destroy: (self: DragObject) -> (),
+	-- Border colors
+	Border = Color3.fromRGB(40, 40, 40),
+	BorderLight = Color3.fromRGB(55, 55, 55),
+	
+	-- Text colors
+	Text = Color3.fromRGB(220, 220, 220),
+	TextMuted = Color3.fromRGB(140, 140, 140),
+	
+	-- Accent colors
+	Accent = Color3.fromRGB(88, 101, 242),
+	AccentHover = Color3.fromRGB(98, 111, 252),
+	
+	-- Status colors
+	Success = Color3.fromRGB(63, 185, 80),
+	Warning = Color3.fromRGB(210, 153, 34),
+	Error = Color3.fromRGB(248, 81, 73),
+	Info = Color3.fromRGB(88, 166, 255),
+	
+	-- Direction colors (from Nova's Incoming/Outgoing)
+	Primary = Color3.fromRGB(63, 185, 80),
+	Secondary = Color3.fromRGB(247, 129, 102),
 }
 
---[[
-	Create a new draggable frame
-	@param frame The main frame to move
-	@param handle The frame to use as drag handle (defaults to frame itself)
-	@param getScale Optional function returning the current UI scale
-	@return DragObject
-]]
-function Drag.new(frame: Frame, handle: Frame?, getScale: (() -> number)?): DragObject
-	handle = handle or frame
-	getScale = getScale or function() return 1 end
-
-	local self = setmetatable({}, Drag)
-	self.Frame = frame
-	self.Handle = handle
-	self.Enabled = true
-
-	local dragging = false
-	local dragStart = nil
-	local startPos = nil
-	local connections = {}
-
-	table.insert(connections, handle.InputBegan:Connect(function(input)
-		if not self.Enabled then return end
-		
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			dragging = true
-			dragStart = input.Position
-			startPos = frame.Position
-
-			input.Changed:Connect(function()
-				if input.UserInputState == Enum.UserInputState.End then
-					dragging = false
-				end
-			end)
-		end
-	end))
-
-	table.insert(connections, UserInputService.InputChanged:Connect(function(input)
-		if not self.Enabled then return end
-		
-		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-			local scale = getScale()
-			local delta = input.Position - dragStart
-			local newPosition = UDim2.new(
-				startPos.X.Scale,
-				startPos.X.Offset + delta.X / scale,
-				startPos.Y.Scale,
-				startPos.Y.Offset + delta.Y / scale
-			)
-			frame.Position = newPosition
-		end
-	end))
-
-	function self:SetEnabled(enabled: boolean)
-		self.Enabled = enabled
-		if not enabled then
-			dragging = false
-		end
-	end
-
-	function self:Destroy()
-		for _, connection in ipairs(connections) do
-			connection:Disconnect()
-		end
-		connections = {}
-	end
-
-	return self
+-- Utility function to lighten a color
+function Theme.Lighten(color: Color3, amount: number): Color3
+	return Color3.new(
+		math.min(color.R + amount, 1),
+		math.min(color.G + amount, 1),
+		math.min(color.B + amount, 1)
+	)
 end
 
-return Drag
+-- Utility function to darken a color
+function Theme.Darken(color: Color3, amount: number): Color3
+	return Color3.new(
+		math.max(color.R - amount, 0),
+		math.max(color.G - amount, 0),
+		math.max(color.B - amount, 0)
+	)
+end
+
+return Theme
 
 end)() end
 } -- [RefId] = Closure
@@ -3057,10 +3022,24 @@ local ObjectTree = {
                                 }
                             },
                             {
-                                10,
+                                7,
                                 2,
                                 {
-                                    "Theme"
+                                    "Interface"
+                                }
+                            },
+                            {
+                                5,
+                                2,
+                                {
+                                    "Helper"
+                                }
+                            },
+                            {
+                                8,
+                                2,
+                                {
+                                    "Resize"
                                 }
                             },
                             {
@@ -3078,24 +3057,10 @@ local ObjectTree = {
                                 }
                             },
                             {
-                                7,
+                                10,
                                 2,
                                 {
-                                    "Interface"
-                                }
-                            },
-                            {
-                                8,
-                                2,
-                                {
-                                    "Resize"
-                                }
-                            },
-                            {
-                                5,
-                                2,
-                                {
-                                    "Helper"
+                                    "Theme"
                                 }
                             }
                         }
@@ -3108,14 +3073,14 @@ local ObjectTree = {
 
 -- Line offsets for debugging (only included when minifyTables is false)
 local LineOffsets = {
-    [6] = 2057,
-    [2] = 67,
-    [7] = 2162,
-    [10] = 8,
-    [8] = 2366,
-    [9] = 2505,
-    [5] = 2733,
-    [4] = 2915
+    [2] = 8,
+    [4] = 1963,
+    [5] = 2066,
+    [6] = 2248,
+    [7] = 2353,
+    [8] = 2557,
+    [9] = 2696,
+    [10] = 2924
 }
 
 -- Misc AOT variable imports
