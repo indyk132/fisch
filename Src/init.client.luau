@@ -568,7 +568,7 @@ local AboutSection = CreateSettingsSection("About")
 Interface.New("TextLabel", {
 BackgroundTransparency = 1,
 Size = UDim2.new(1, 0, 0, 24),
-Text = "<b>Nova UI</b>  Fisch Script",
+Text = "<b>Nova UI</b>  04xSkater",
 TextColor3 = Theme.TextMuted,
 TextSize = 12,
 Font = Enum.Font.GothamMedium,
@@ -831,6 +831,20 @@ value = newValue
 self.Value = value
 dropdownBtn.Text = value
 end
+end,
+UpdateOptions = function(self, newOptions, newDefault)
+if not newOptions or #newOptions == 0 then return end
+options = newOptions
+local idx = table.find(options, newDefault)
+if idx then
+currentIndex = idx
+value = options[idx]
+else
+currentIndex = 1
+value = options[1]
+end
+self.Value = value
+dropdownBtn.Text = value
 end,
 }
 end
@@ -1282,8 +1296,8 @@ end)
 
 -- Teleports category
 local Teleports = Library:AddCategory("Teleports", "map-pin")
-Teleports:AddDropdown("Area Teleport", {"(select area)"}, "(select area)", function(v)
-if GameCallbacks.areaTp then GameCallbacks.areaTp(v) end
+local AreaDropdown = Teleports:AddDropdown("Area Teleport", {"(loading...)"}, "(loading...)", function(v)
+if v ~= "(loading...)" and GameCallbacks.areaTp then GameCallbacks.areaTp(v) end
 end)
 Teleports:AddDropdown("Totem Teleport", {"Aurora", "Sundial", "Windset", "Smokescreen", "Tempest"}, "Aurora", function(v)
 if GameCallbacks.totemTp then GameCallbacks.totemTp(v) end
@@ -1382,6 +1396,12 @@ local LocalCharacter = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait(
 local HumanoidRootPart = LocalCharacter:FindFirstChild("HumanoidRootPart")
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local RenderStepped = RunService.RenderStepped
+
+-- Keep references fresh after respawn
+LocalPlayer.CharacterAdded:Connect(function(char)
+LocalCharacter = char
+HumanoidRootPart = char:WaitForChild("HumanoidRootPart")
+end)
 
 -- State
 local CastMode = "Legit"
@@ -1957,8 +1977,10 @@ if table.find(spots, v.Name) == nil then
 table.insert(spots, v.Name)
 end
 end
--- The area dropdown was created with placeholder data
--- Users will cycle through available spots
+table.sort(spots)
+if #spots > 0 and AreaDropdown then
+AreaDropdown:UpdateOptions(spots, spots[1])
+end
 end)
 end)
 
