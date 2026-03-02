@@ -1,4 +1,4 @@
-﻿--[[
+--[[
 	Nova UI Library
 	General-purpose executor GUI framework with Nova's visual style.
 	
